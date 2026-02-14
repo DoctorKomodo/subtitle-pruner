@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   subtitle-pruner:
-    build: .
+    image: ghcr.io/doctorkomodo/subtitle-pruner:latest
     container_name: subtitle-pruner
     restart: unless-stopped
     ports:

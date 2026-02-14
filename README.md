@@ -12,32 +12,58 @@ A webhook-based service that automatically removes unwanted subtitle tracks from
 
 ## Quick Start
 
-### 1. Deploy on Synology NAS
+### 1. Create a docker-compose.yml
 
-Copy this folder to your Synology NAS (e.g., via File Station or `scp`).
-
-### 2. Edit docker-compose.yml
-
-Update the volume mounts to match your media folder paths:
+The Docker image is automatically built and published to GitHub Container Registry. Create a `docker-compose.yml` on your server (e.g., Synology NAS):
 
 ```yaml
-volumes:
-  - ./data:/data
-  - /volume1/media:/volume1/media  # Adjust to your paths
+version: "3.8"
+
+services:
+  subtitle-pruner:
+    image: ghcr.io/doctorkomodo/subtitle-pruner:latest
+    container_name: subtitle-pruner
+    restart: unless-stopped
+    ports:
+      - "14000:14000"
+    volumes:
+      - ./data:/data
+      - /volume1/media:/volume1/media  # Adjust to your paths
+    environment:
+      - ALLOWED_LANGUAGES=eng,dan
+      - LOG_LEVEL=INFO
+      - PORT=14000
 ```
 
 **Important:** The paths inside the container must match the paths that Radarr/Sonarr will send. If Radarr is configured with `/volume1/media/movies` as its root folder, mount exactly that path.
 
-### 3. Build and run
+### 2. Run
 
 ```bash
+docker-compose up -d
+```
+
+To update to the latest version:
+
+```bash
+docker-compose pull && docker-compose up -d
+```
+
+### 3. Verify it's running
+
+Open `http://your-nas-ip:14000` in a browser. You should see the web UI.
+
+### Building locally (optional)
+
+If you prefer to build from source instead of pulling from GHCR:
+
+```bash
+git clone https://github.com/DoctorKomodo/subtitle-pruner.git
 cd subtitle-pruner
 docker-compose up -d --build
 ```
 
-### 4. Verify it's running
-
-Open `http://your-nas-ip:14000` in a browser. You should see the web UI.
+Replace `image:` with `build: .` in `docker-compose.yml` when building locally.
 
 ## Radarr/Sonarr Setup
 
