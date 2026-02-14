@@ -53,60 +53,66 @@ class SubtitleProcessor:
         
         return json.loads(result.stdout)
     
-    def process_file(self, file_path: str) -> dict:
+    def analyze_file(self, file_path: str) -> dict:
         """
-        Process a single MKV file, removing unwanted subtitle tracks.
-        
+        Analyze an MKV file to determine if subtitle pruning is needed.
+
         Returns a dict with:
-            - action: 'processed', 'skipped', or 'error'
-            - reason: why the action was taken
-            - removed_tracks: count of removed tracks (if processed)
+            - needs_processing: True if subtitles need to be removed
+            - action: 'skipped' if no processing needed
+            - reason: why the file was skipped (if skipped)
+            - tracks_to_keep: list of tracks to keep (if needs_processing)
+            - tracks_to_remove: list of tracks to remove (if needs_processing)
         """
         # Verify file exists
         if not os.path.exists(file_path):
             return {
+                'needs_processing': False,
                 'action': 'skipped',
                 'reason': f'File not found: {file_path}'
             }
-        
+
         # Verify it's an MKV file
         if not file_path.lower().endswith('.mkv'):
             return {
+                'needs_processing': False,
                 'action': 'skipped',
                 'reason': 'Not an MKV file'
             }
-        
+
         # Get track information
         try:
             track_info = self.get_track_info(file_path)
         except Exception as e:
             return {
+                'needs_processing': False,
                 'action': 'error',
                 'reason': f'Failed to read track info: {e}'
             }
-        
+
         tracks = track_info.get('tracks', [])
         subtitle_tracks = [t for t in tracks if t.get('type') == 'subtitles']
-        
+
         # No subtitles at all
         if not subtitle_tracks:
             return {
+                'needs_processing': False,
                 'action': 'skipped',
                 'reason': 'No subtitle tracks'
             }
-        
+
         # Determine which tracks to keep
         # Keep: non-forced tracks in allowed languages
         tracks_to_keep = []
         tracks_to_remove = []
-        
+
         for track in subtitle_tracks:
             props = track.get('properties', {})
             track_id = track.get('id')
             language = props.get('language', 'und').lower()
             is_forced = props.get('forced_track', False)
             track_name = props.get('track_name', '')
-            
+
             # Keep if: language is allowed AND not forced
             if language in self.allowed_languages and not is_forced:
                 tracks_to_keep.append({
@@ -123,22 +129,50 @@ class SubtitleProcessor:
                     'name': track_name,
                     'reason': 'forced track' if is_forced else f'language {language} not in allowed list'
                 })
-        
+
         # Nothing to remove
         if not tracks_to_remove:
             return {
+                'needs_processing': False,
                 'action': 'skipped',
                 'reason': 'No subtitle tracks to remove'
             }
-        
+
         # Nothing to keep - this might be unexpected
         if not tracks_to_keep:
             logger.warning(f"No subtitle tracks would remain after processing: {file_path}")
             return {
+                'needs_processing': False,
                 'action': 'skipped',
                 'reason': 'No allowed subtitle tracks to keep'
             }
-        
+
+        return {
+            'needs_processing': True,
+            'tracks_to_keep': tracks_to_keep,
+            'tracks_to_remove': tracks_to_remove
+        }
+
+    def process_file(self, file_path: str) -> dict:
+        """
+        Process a single MKV file, removing unwanted subtitle tracks.
+
+        Returns a dict with:
+            - action: 'processed', 'skipped', or 'error'
+            - reason: why the action was taken
+            - removed_tracks: count of removed tracks (if processed)
+        """
+        analysis = self.analyze_file(file_path)
+
+        if not analysis.get('needs_processing'):
+            return {
+                'action': analysis.get('action', 'skipped'),
+                'reason': analysis.get('reason', 'unknown')
+            }
+
+        tracks_to_keep = analysis['tracks_to_keep']
+        tracks_to_remove = analysis['tracks_to_remove']
+
         # Build mkvmerge command
         keep_ids = ','.join(str(t['id']) for t in tracks_to_keep)
         

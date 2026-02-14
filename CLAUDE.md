@@ -43,14 +43,16 @@ The application has three main components:
    - Applies path mappings via `apply_path_mapping()` to translate remote paths
 
 2. **worker.py** - Background queue processor (`ProcessingWorker`)
-   - Runs in a daemon thread started by `app.py`
+   - Runs two daemon threads started by `app.py`:
+     - **Analysis thread**: picks up `pending` entries, runs `analyze_file()` to scan tracks, marks as `skipped` or `awaiting_processing`
+     - **Processing thread**: picks up `awaiting_processing` entries, applies `PROCESS_DELAY`, then remuxes with mkvmerge
    - Persists queue to `/data/queue.json` for restart recovery
    - Thread-safe queue operations using `threading.Lock`
-   - Processes files sequentially from the queue
-   - Supports configurable delay before processing (`PROCESS_DELAY`)
+   - Entry statuses: `pending` → `analyzing` → `skipped` or `awaiting_processing` → `processing` → `completed`/`failed`
 
 3. **processor.py** - MKV processing logic (`SubtitleProcessor`)
-   - Uses `mkvmerge --identify` to read track metadata
+   - `analyze_file()` uses `mkvmerge --identify` to determine if processing is needed
+   - `process_file()` calls `analyze_file()` then remuxes if needed
    - Keeps subtitle tracks that match allowed languages AND are not forced
    - Writes to `.tmp.mkv` then replaces original atomically
    - Has sanity check: fails if output is <50% of original size
@@ -68,12 +70,14 @@ Environment variables (set in `docker-compose.yml`):
 ## Processing Flow
 
 1. Radarr/Sonarr sends webhook on import/upgrade (test events return 200 OK immediately)
-2. `app.py` extracts file path, applies path mappings, validates `.mkv` extension, adds to queue
-3. Worker picks up entry, marks as "processing", waits for `PROCESS_DELAY` if configured
-4. `SubtitleProcessor.process_file()`:
+2. `app.py` extracts file path, applies path mappings, validates `.mkv` extension, adds to queue as `pending`
+3. **Analysis thread** picks up entry, runs `analyze_file()`:
    - Reads tracks with `mkvmerge --identify --identification-format json`
    - Filters subtitle tracks: keeps if language in allowed list AND not forced
-   - If nothing to remove: marks as "skipped"
+   - If nothing to remove: marks as `skipped` immediately (no delay)
+   - If processing needed: marks as `awaiting_processing`
+4. **Processing thread** picks up `awaiting_processing` entry:
+   - Waits for `PROCESS_DELAY` if configured
    - Runs `mkvmerge --output temp.mkv --subtitle-tracks <keep_ids> input.mkv`
    - Replaces original with `os.replace()`
-5. Queue entry marked completed/failed/skipped with result details
+5. Queue entry marked completed/failed with result details

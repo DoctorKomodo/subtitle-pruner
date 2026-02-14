@@ -293,11 +293,11 @@
         
         <div class="stats">
             <div class="stat-card pending">
-                <div class="number">{{ status.counts.pending }}</div>
-                <div class="label">Pending</div>
+                <div class="number">{{ status.counts.pending + status.counts.analyzing }}</div>
+                <div class="label">Analyzing</div>
             </div>
-            <div class="stat-card processing">
-                <div class="number">{{ status.counts.processing }}</div>
+            <div class="stat-card pending">
+                <div class="number">{{ status.counts.awaiting_processing + status.counts.processing }}</div>
                 <div class="label">Processing</div>
             </div>
             <div class="stat-card completed">
@@ -323,11 +323,27 @@
         </div>
         {% endif %}
         
-        {% if status.pending %}
+        {% if status.pending or status.analyzing %}
         <div class="section">
-            <h2>Pending <span class="count">{{ status.counts.pending }}</span></h2>
+            <h2><span class="spinner"></span> Analyzing <span class="count">{{ status.counts.pending + status.counts.analyzing }}</span></h2>
             <ul class="queue-list">
-                {% for item in status.pending %}
+                {% for item in status.analyzing + status.pending %}
+                <li class="queue-item">
+                    <div class="file-info">
+                        <div class="file-path">{{ item.file_path }}</div>
+                        <div class="meta">Added: {{ item.added_at }}</div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if status.awaiting_processing %}
+        <div class="section">
+            <h2>Awaiting Processing <span class="count">{{ status.counts.awaiting_processing }}</span></h2>
+            <ul class="queue-list">
+                {% for item in status.awaiting_processing %}
                 <li class="queue-item">
                     <div class="file-info">
                         <div class="file-path">{{ item.file_path }}</div>
