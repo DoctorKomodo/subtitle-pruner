@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  subtitle-pruner:
+    build: .
+    container_name: subtitle-pruner
+    restart: unless-stopped
+    ports:
+      - "14000:14000"
+    volumes:
+      # Queue persistence - stores processing queue across restarts
+      - ./data:/data
+
+      # Mount your media folders here
+      # These should match the "to" side of your PATH_MAPPINGS
+      # The host path depends on how you access the NAS (NFS mount, SMB mount, etc.)
+      - /volume2/movies:/media/movies/
+      - /volume2/tvseries:/media/tv/
+
+    environment:
+      # Comma-separated list of subtitle languages to keep
+      - ALLOWED_LANGUAGES=eng,dan
+
+      # Log level: DEBUG, INFO, WARNING, ERROR
+      - LOG_LEVEL=INFO
+
+      # Port (must match the port mapping above)
+      - PORT=14000
+
+      # Path mappings: translate Windows UNC paths from Radarr/Sonarr to container paths
+      # Format: from1=to1,from2=to2
+      - PATH_MAPPINGS=\\diskstation\movies\=/media/movies/,\\diskstation\tvseries\=/media/tv/
+
+      # Delay in seconds before processing a file (allows other apps to finish with the file)
+      - PROCESS_DELAY=300
