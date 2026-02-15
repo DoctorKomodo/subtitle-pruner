@@ -15,9 +15,12 @@ logger = logging.getLogger(__name__)
 class SubtitleProcessor:
     """Processes MKV files to remove unwanted subtitle tracks."""
     
-    def __init__(self, allowed_languages: List[str]):
+    def __init__(self, allowed_languages: List[str], plex_checker=None):
         self.allowed_languages = [lang.strip().lower() for lang in allowed_languages]
+        self.plex_checker = plex_checker
         logger.info(f"Subtitle processor initialized with allowed languages: {self.allowed_languages}")
+        if self.plex_checker:
+            logger.info("Plex scan check enabled for file replacement")
         
         # Verify mkvmerge is available
         self._verify_mkvmerge()
@@ -221,7 +224,11 @@ class SubtitleProcessor:
                 raise RuntimeError(
                     f"Output file suspiciously small ({new_size} vs {original_size} bytes)"
                 )
-            
+
+            # Wait for Plex library scan to finish before replacing file
+            if self.plex_checker:
+                self.plex_checker.wait_if_scanning(file_path)
+
             os.replace(temp_path, file_path)
             
             return {

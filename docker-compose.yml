@@ -33,3 +33,12 @@ services:
 
       # Time of day to process files (HH:MM, 24-hour format). If not set, files are processed immediately.
       - PROCESS_TIME=02:00
+
+      # Plex integration (optional): wait for library scan to finish before replacing files
+      # - PLEX_URL=http://192.168.1.100:32400
+      # - PLEX_TOKEN=your-plex-token-here
+      # - PLEX_SCAN_CHECK_INTERVAL=30
+      # - PLEX_SCAN_CHECK_TIMEOUT=3600
+      # Plex path mapping: translate container paths to Plex paths (if different)
+      # Format: container_prefix1=plex_prefix1,container_prefix2=plex_prefix2
+      # - PLEX_PATH_MAPPING=/media/movies/=/volume2/movies/,/media/tv/=/volume2/tvseries/
