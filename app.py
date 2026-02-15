@@ -17,7 +17,7 @@ CONFIG = {
     'queue_file': os.environ.get('QUEUE_FILE', '/data/queue.json'),
     'log_level': os.environ.get('LOG_LEVEL', 'INFO'),
     'path_mappings': [],
-    'process_delay': int(os.environ.get('PROCESS_DELAY', '0')),
+    'process_time': os.environ.get('PROCESS_TIME', ''),
 }
 
 # Parse PATH_MAPPINGS: "from1=to1,from2=to2" format
@@ -53,7 +53,7 @@ app = Flask(__name__)
 
 # Initialize processor and worker
 processor = SubtitleProcessor(CONFIG['allowed_languages'])
-worker = ProcessingWorker(processor, CONFIG['queue_file'], CONFIG['process_delay'])
+worker = ProcessingWorker(processor, CONFIG['queue_file'], CONFIG['process_time'])
 
 
 @app.route('/')
@@ -176,8 +176,10 @@ def main():
     """Start the application."""
     logger.info(f"Starting Subtitle Pruner")
     logger.info(f"Allowed languages: {CONFIG['allowed_languages']}")
-    if CONFIG['process_delay'] > 0:
-        logger.info(f"Process delay: {CONFIG['process_delay']} seconds")
+    if CONFIG['process_time']:
+        logger.info(f"Process time: {CONFIG['process_time']}")
+    else:
+        logger.info("No process time configured - files will be processed immediately")
     if CONFIG['path_mappings']:
         logger.info(f"Path mappings configured:")
         for from_path, to_path in CONFIG['path_mappings']:

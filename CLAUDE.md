@@ -45,7 +45,7 @@ The application has three main components:
 2. **worker.py** - Background queue processor (`ProcessingWorker`)
    - Runs two daemon threads started by `app.py`:
      - **Analysis thread**: picks up `pending` entries, runs `analyze_file()` to scan tracks, marks as `skipped` or `awaiting_processing`
-     - **Processing thread**: picks up `awaiting_processing` entries, applies `PROCESS_DELAY`, then remuxes with mkvmerge
+     - **Processing thread**: picks up `awaiting_processing` entries. If `PROCESS_TIME` is configured, waits until that time of day then processes all queued files. Otherwise processes immediately.
    - Persists queue to `/data/queue.json` for restart recovery
    - Thread-safe queue operations using `threading.Lock`
    - Entry statuses: `pending` → `analyzing` → `skipped` or `awaiting_processing` → `processing` → `completed`/`failed`
@@ -65,7 +65,7 @@ Environment variables (set in `docker-compose.yml`):
 - `PORT` - HTTP port (default: 14000)
 - `QUEUE_FILE` - Path to queue persistence file
 - `PATH_MAPPINGS` - Translate remote paths to container paths (format: `from1=to1,from2=to2`)
-- `PROCESS_DELAY` - Seconds to wait before processing a file (default: 0)
+- `PROCESS_TIME` - Time of day to process files in HH:MM 24-hour format (e.g., `02:00`). If not set, files are processed immediately.
 
 ## Processing Flow
 
@@ -76,8 +76,9 @@ Environment variables (set in `docker-compose.yml`):
    - Filters subtitle tracks: keeps if language in allowed list AND not forced
    - If nothing to remove: marks as `skipped` immediately (no delay)
    - If processing needed: marks as `awaiting_processing`
-4. **Processing thread** picks up `awaiting_processing` entry:
-   - Waits for `PROCESS_DELAY` if configured
+4. **Processing thread** picks up `awaiting_processing` entries:
+   - If `PROCESS_TIME` is configured, waits until that time of day then processes all queued files
+   - If `PROCESS_TIME` is not set, processes immediately
    - Runs `mkvmerge --output temp.mkv --subtitle-tracks <keep_ids> input.mkv`
    - Replaces original with `os.replace()`
 5. Queue entry marked completed/failed with result details

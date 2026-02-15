@@ -3,7 +3,7 @@ Background worker that processes the subtitle pruning queue.
 
 Uses two worker threads:
 - Analysis thread: scans files sequentially to determine if processing is needed
-- Processing thread: remuxes files that need subtitle removal, with configurable delay
+- Processing thread: remuxes files that need subtitle removal, at a configurable time of day
 """
 
 import os
@@ -12,7 +12,7 @@ import threading
 import time
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 class ProcessingWorker:
     """Background worker that processes files from the queue."""
 
-    def __init__(self, processor, queue_file: str, process_delay: int = 0):
+    def __init__(self, processor, queue_file: str, process_time: str = ''):
         self.processor = processor
         self.queue_file = queue_file
-        self.process_delay = process_delay
+        self.process_time = self._parse_process_time(process_time)
         self.queue = []
         self.lock = threading.Lock()
         self.running = False
@@ -43,6 +43,25 @@ class ProcessingWorker:
 
         # Load existing queue from disk
         self._load_queue()
+
+    @staticmethod
+    def _parse_process_time(value: str) -> Optional[tuple]:
+        """Parse a HH:MM time string into (hour, minute) tuple, or None if empty/invalid."""
+        if not value or not value.strip():
+            return None
+        value = value.strip()
+        try:
+            parts = value.split(':')
+            if len(parts) != 2:
+                raise ValueError(f"Expected HH:MM format, got '{value}'")
+            hour, minute = int(parts[0]), int(parts[1])
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError(f"Time out of range: {hour:02d}:{minute:02d}")
+            logger.info(f"Processing scheduled for {hour:02d}:{minute:02d} daily")
+            return (hour, minute)
+        except ValueError as e:
+            logger.error(f"Invalid PROCESS_TIME '{value}': {e}. Processing will run immediately.")
+            return None
 
     def _load_queue(self):
         """Load queue from disk if it exists."""
@@ -108,9 +127,14 @@ class ProcessingWorker:
             failed = [e for e in self.queue if e['status'] == 'failed']
             skipped = [e for e in self.queue if e['status'] == 'skipped']
 
+            process_time_str = None
+            if self.process_time is not None:
+                process_time_str = f"{self.process_time[0]:02d}:{self.process_time[1]:02d}"
+
             return {
                 'worker_running': self.running,
                 'current_file': self.current_file,
+                'process_time': process_time_str,
                 'counts': {
                     'pending': len(pending),
                     'analyzing': len(analyzing),
@@ -226,24 +250,76 @@ class ProcessingWorker:
 
     # --- Processing thread ---
 
+    def _seconds_until_process_time(self) -> float:
+        """Calculate seconds until the next occurrence of the configured process time."""
+        now = datetime.now()
+        target = now.replace(hour=self.process_time[0], minute=self.process_time[1], second=0, microsecond=0)
+        if target <= now:
+            # Already passed today, schedule for tomorrow
+            target += timedelta(days=1)
+        delta = (target - now).total_seconds()
+        return delta
+
+    def _has_awaiting_entries(self) -> bool:
+        """Check if there are any entries awaiting processing."""
+        with self.lock:
+            return any(e['status'] == 'awaiting_processing' for e in self.queue)
+
     def _process_loop(self):
         """Processing worker loop - remuxes files that need subtitle removal."""
         while self.running:
-            entry = self._get_next_for_status('awaiting_processing', 'processing')
+            if self.process_time is not None:
+                self._process_loop_scheduled()
+            else:
+                self._process_loop_immediate()
 
+    def _process_loop_immediate(self):
+        """Process files immediately as they become available."""
+        while self.running:
+            entry = self._get_next_for_status('awaiting_processing', 'processing')
             if entry is None:
                 time.sleep(1)
                 continue
-
             self._process_entry(entry)
+
+    def _process_loop_scheduled(self):
+        """Wait until the configured time, then process all awaiting files."""
+        while self.running:
+            # Wait until there are files to process
+            if not self._has_awaiting_entries():
+                time.sleep(5)
+                continue
+
+            # Sleep until the scheduled time, checking periodically
+            wait_seconds = self._seconds_until_process_time()
+            next_run = datetime.now() + timedelta(seconds=wait_seconds)
+            logger.info(f"Files awaiting processing. Next processing run at {next_run.strftime('%Y-%m-%d %H:%M')}")
+
+            while self.running and wait_seconds > 0:
+                sleep_interval = min(wait_seconds, 30)
+                time.sleep(sleep_interval)
+                wait_seconds = self._seconds_until_process_time()
+                # If wait_seconds is very large (>23h), that means we just crossed
+                # the target time — break out to process
+                if wait_seconds > 23 * 3600:
+                    break
+
+            if not self.running:
+                break
+
+            # Process all awaiting entries
+            logger.info("Processing time reached. Processing all queued files.")
+            while self.running:
+                entry = self._get_next_for_status('awaiting_processing', 'processing')
+                if entry is None:
+                    break
+                self._process_entry(entry)
+
+            logger.info("All queued files processed.")
 
     def _process_entry(self, entry: dict):
         """Process a single queue entry that needs subtitle removal."""
         file_path = entry['file_path']
-
-        if self.process_delay > 0:
-            logger.info(f"Waiting {self.process_delay}s before processing: {file_path}")
-            time.sleep(self.process_delay)
 
         logger.info(f"Processing: {file_path}")
 
