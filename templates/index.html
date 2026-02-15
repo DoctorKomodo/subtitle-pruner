@@ -287,6 +287,10 @@
         
         <div class="config-info">
             Keeping languages: <strong>{{ config.allowed_languages | join(', ') }}</strong>
+            {% if status.process_time %}
+            &nbsp;•&nbsp;
+            Processing at: <strong>{{ status.process_time }}</strong>
+            {% endif %}
             &nbsp;•&nbsp;
             <span class="auto-refresh">Auto-refreshes every 5 seconds</span>
         </div>
