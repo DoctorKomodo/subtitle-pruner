@@ -18,6 +18,11 @@ services:
       - /volume2/tvseries:/media/tv/
 
     environment:
+      # Set these to match your host user so the container can read/write
+      # your media folders and data directory. Find with: id your_user
+      - PUID=1000
+      - PGID=1000
+
       # Comma-separated list of subtitle languages to keep
       - ALLOWED_LANGUAGES=eng,dan
 
