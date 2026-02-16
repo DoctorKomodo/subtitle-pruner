@@ -28,15 +28,6 @@ if path_mappings_raw:
             from_path, to_path = mapping.split('=', 1)
             CONFIG['path_mappings'].append((from_path, to_path))
 
-# Derive allowed paths from the "to" side of PATH_MAPPINGS (i.e., the container mount points).
-# Falls back to /media if no mappings are configured.
-if CONFIG['path_mappings']:
-    CONFIG['allowed_paths'] = [
-        os.path.realpath(to_path) for _, to_path in CONFIG['path_mappings']
-    ]
-else:
-    CONFIG['allowed_paths'] = [os.path.realpath('/media')]
-
 # Set up logging
 logging.basicConfig(
     level=getattr(logging, CONFIG['log_level']),
@@ -55,17 +46,6 @@ def apply_path_mapping(file_path: str) -> str:
             logger.debug(f"Path mapped: {original_path} -> {file_path}")
             break
     return file_path
-
-
-def validate_file_path(file_path: str) -> bool:
-    """Validate that a file path is within one of the allowed directories."""
-    if not CONFIG['allowed_paths']:
-        return True
-    resolved = os.path.realpath(file_path)
-    for allowed in CONFIG['allowed_paths']:
-        if resolved.startswith(allowed + os.sep) or resolved == allowed:
-            return True
-    return False
 
 
 # Initialize Flask app
@@ -146,14 +126,6 @@ def webhook():
         # Apply path mappings (e.g., Windows UNC paths to container paths)
         file_path = apply_path_mapping(file_path)
 
-        # Validate file path is within allowed directories
-        if not validate_file_path(file_path):
-            logger.warning(f"Rejected file outside allowed paths: {file_path}")
-            return jsonify({
-                'status': 'error',
-                'message': 'File path is not within allowed directories'
-            }), 403
-
         # Validate it's an MKV file
         if not file_path.lower().endswith('.mkv'):
             logger.info(f"Ignoring non-MKV file: {file_path}")
@@ -208,8 +180,6 @@ def _start_worker():
         logger.info(f"Process time: {CONFIG['process_time']}")
     else:
         logger.info("No process time configured - files will be processed immediately")
-    if CONFIG['allowed_paths']:
-        logger.info(f"Allowed paths: {CONFIG['allowed_paths']}")
     if CONFIG['path_mappings']:
         logger.info(f"Path mappings configured:")
         for from_path, to_path in CONFIG['path_mappings']:
