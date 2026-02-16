@@ -18,6 +18,7 @@ CONFIG = {
     'log_level': os.environ.get('LOG_LEVEL', 'INFO'),
     'path_mappings': [],
     'process_time': os.environ.get('PROCESS_TIME', ''),
+    'allowed_paths': [],
 }
 
 # Parse PATH_MAPPINGS: "from1=to1,from2=to2" format
@@ -27,6 +28,14 @@ if path_mappings_raw:
         if '=' in mapping:
             from_path, to_path = mapping.split('=', 1)
             CONFIG['path_mappings'].append((from_path, to_path))
+
+# Parse ALLOWED_PATHS: comma-separated list of directories files must reside within
+# Defaults to /media if not set
+allowed_paths_raw = os.environ.get('ALLOWED_PATHS', '/media')
+if allowed_paths_raw:
+    CONFIG['allowed_paths'] = [
+        os.path.realpath(p.strip()) for p in allowed_paths_raw.split(':') if p.strip()
+    ]
 
 # Set up logging
 logging.basicConfig(
@@ -46,6 +55,17 @@ def apply_path_mapping(file_path: str) -> str:
             logger.debug(f"Path mapped: {original_path} -> {file_path}")
             break
     return file_path
+
+
+def validate_file_path(file_path: str) -> bool:
+    """Validate that a file path is within one of the allowed directories."""
+    if not CONFIG['allowed_paths']:
+        return True
+    resolved = os.path.realpath(file_path)
+    for allowed in CONFIG['allowed_paths']:
+        if resolved.startswith(allowed + os.sep) or resolved == allowed:
+            return True
+    return False
 
 
 # Initialize Flask app
@@ -126,6 +146,14 @@ def webhook():
         # Apply path mappings (e.g., Windows UNC paths to container paths)
         file_path = apply_path_mapping(file_path)
 
+        # Validate file path is within allowed directories
+        if not validate_file_path(file_path):
+            logger.warning(f"Rejected file outside allowed paths: {file_path}")
+            return jsonify({
+                'status': 'error',
+                'message': 'File path is not within allowed directories'
+            }), 403
+
         # Validate it's an MKV file
         if not file_path.lower().endswith('.mkv'):
             logger.info(f"Ignoring non-MKV file: {file_path}")
@@ -172,28 +200,31 @@ def retry_entry(entry_id):
         return jsonify({'status': 'error', 'message': 'Entry not found'}), 404
 
 
-def main():
-    """Start the application."""
+def _start_worker():
+    """Log configuration and start the background worker threads."""
     logger.info(f"Starting Subtitle Pruner")
     logger.info(f"Allowed languages: {CONFIG['allowed_languages']}")
     if CONFIG['process_time']:
         logger.info(f"Process time: {CONFIG['process_time']}")
     else:
         logger.info("No process time configured - files will be processed immediately")
+    if CONFIG['allowed_paths']:
+        logger.info(f"Allowed paths: {CONFIG['allowed_paths']}")
     if CONFIG['path_mappings']:
         logger.info(f"Path mappings configured:")
         for from_path, to_path in CONFIG['path_mappings']:
             logger.info(f"  {from_path} -> {to_path}")
     else:
         logger.info("No path mappings configured")
-    
-    # Start the background worker
+
     worker.start()
-    
-    # Run Flask
-    port = int(os.environ.get('PORT', 14000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+
+
+# Start worker threads when the module is loaded (works with both gunicorn and direct run)
+_start_worker()
 
 
 if __name__ == '__main__':
-    main()
+    # Development only — use gunicorn in production
+    port = int(os.environ.get('PORT', 14000))
+    app.run(host='0.0.0.0', port=port, debug=False)

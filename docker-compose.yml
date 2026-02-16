@@ -31,5 +31,9 @@ services:
       # Format: from1=to1,from2=to2
       - PATH_MAPPINGS=\\diskstation\movies\=/media/movies/,\\diskstation\tvseries\=/media/tv/
 
+      # Colon-separated list of directories that files must reside within (path traversal protection)
+      # Defaults to /media if not set
+      - ALLOWED_PATHS=/media
+
       # Time of day to process files (HH:MM, 24-hour format). If not set, files are processed immediately.
       - PROCESS_TIME=02:00
