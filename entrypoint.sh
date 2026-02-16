@@ -7,19 +7,26 @@ PGID="${PGID:-1000}"
 
 echo "Starting with UID=$PUID GID=$PGID"
 
-# Update appuser's group and user IDs to match the requested ones
-if [ "$(id -g appuser)" != "$PGID" ]; then
-    delgroup appuser 2>/dev/null
+# Remove the build-time appuser so we can recreate with the correct IDs
+deluser appuser 2>/dev/null
+delgroup appuser 2>/dev/null
+
+# Reuse existing group if one already has our target GID, otherwise create one
+GROUP_NAME=$(awk -F: -v gid="$PGID" '$3 == gid {print $1; exit}' /etc/group)
+if [ -z "$GROUP_NAME" ]; then
     addgroup -g "$PGID" appuser
+    GROUP_NAME="appuser"
 fi
 
-if [ "$(id -u appuser)" != "$PUID" ]; then
-    deluser appuser 2>/dev/null
-    adduser -D -h /app -u "$PUID" -G appuser appuser
+# Reuse existing user if one already has our target UID, otherwise create one
+USER_NAME=$(awk -F: -v uid="$PUID" '$3 == uid {print $1; exit}' /etc/passwd)
+if [ -z "$USER_NAME" ]; then
+    adduser -D -h /app -u "$PUID" -G "$GROUP_NAME" appuser
+    USER_NAME="appuser"
 fi
 
-# Ensure appuser owns the data directory
-chown appuser:appuser /data
+# Ensure the data directory is writable
+chown "$USER_NAME:$GROUP_NAME" /data
 
-# Drop to appuser and exec the CMD
-exec su-exec appuser "$@"
+# Drop privileges and exec the CMD
+exec su-exec "$USER_NAME" "$@"
