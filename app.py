@@ -172,8 +172,8 @@ def retry_entry(entry_id):
         return jsonify({'status': 'error', 'message': 'Entry not found'}), 404
 
 
-def main():
-    """Start the application."""
+def _start_worker():
+    """Log configuration and start the background worker threads."""
     logger.info(f"Starting Subtitle Pruner")
     logger.info(f"Allowed languages: {CONFIG['allowed_languages']}")
     if CONFIG['process_time']:
@@ -186,14 +186,15 @@ def main():
             logger.info(f"  {from_path} -> {to_path}")
     else:
         logger.info("No path mappings configured")
-    
-    # Start the background worker
+
     worker.start()
-    
-    # Run Flask
-    port = int(os.environ.get('PORT', 14000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+
+
+# Start worker threads when the module is loaded (works with both gunicorn and direct run)
+_start_worker()
 
 
 if __name__ == '__main__':
-    main()
+    # Development only — use gunicorn in production
+    port = int(os.environ.get('PORT', 14000))
+    app.run(host='0.0.0.0', port=port, debug=False)
