@@ -18,6 +18,11 @@ CONFIG = {
     'log_level': os.environ.get('LOG_LEVEL', 'INFO'),
     'path_mappings': [],
     'process_time': os.environ.get('PROCESS_TIME', ''),
+    'plex_url': os.environ.get('PLEX_URL', ''),
+    'plex_token': os.environ.get('PLEX_TOKEN', ''),
+    'plex_scan_check_interval': int(os.environ.get('PLEX_SCAN_CHECK_INTERVAL', '30')),
+    'plex_scan_check_timeout': int(os.environ.get('PLEX_SCAN_CHECK_TIMEOUT', '3600')),
+    'plex_path_mappings': [],
 }
 
 # Parse PATH_MAPPINGS: "from1=to1,from2=to2" format
@@ -27,6 +32,14 @@ if path_mappings_raw:
         if '=' in mapping:
             from_path, to_path = mapping.split('=', 1)
             CONFIG['path_mappings'].append((from_path, to_path))
+
+# Parse PLEX_PATH_MAPPING: "container1=plex1,container2=plex2" format
+plex_path_mappings_raw = os.environ.get('PLEX_PATH_MAPPING', '')
+if plex_path_mappings_raw:
+    for mapping in plex_path_mappings_raw.split(','):
+        if '=' in mapping:
+            container_path, plex_path = mapping.split('=', 1)
+            CONFIG['plex_path_mappings'].append((container_path, plex_path))
 
 # Set up logging
 logging.basicConfig(
@@ -51,8 +64,20 @@ def apply_path_mapping(file_path: str) -> str:
 # Initialize Flask app
 app = Flask(__name__)
 
+# Initialize Plex scan checker (optional)
+plex_checker = None
+if CONFIG['plex_url'] and CONFIG['plex_token']:
+    from plex import PlexScanChecker
+    plex_checker = PlexScanChecker(
+        plex_url=CONFIG['plex_url'],
+        plex_token=CONFIG['plex_token'],
+        path_mappings=CONFIG['plex_path_mappings'],
+        check_interval=CONFIG['plex_scan_check_interval'],
+        check_timeout=CONFIG['plex_scan_check_timeout'],
+    )
+
 # Initialize processor and worker
-processor = SubtitleProcessor(CONFIG['allowed_languages'])
+processor = SubtitleProcessor(CONFIG['allowed_languages'], plex_checker=plex_checker)
 worker = ProcessingWorker(processor, CONFIG['queue_file'], CONFIG['process_time'])
 
 
@@ -186,7 +211,14 @@ def main():
             logger.info(f"  {from_path} -> {to_path}")
     else:
         logger.info("No path mappings configured")
-    
+    if CONFIG['plex_url']:
+        logger.info(f"Plex scan check enabled: {CONFIG['plex_url']}")
+        if CONFIG['plex_path_mappings']:
+            for container_path, plex_path in CONFIG['plex_path_mappings']:
+                logger.info(f"  Plex path mapping: {container_path} -> {plex_path}")
+    else:
+        logger.info("Plex scan check disabled (PLEX_URL not set)")
+
     # Start the background worker
     worker.start()
     

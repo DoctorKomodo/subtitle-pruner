@@ -32,7 +32,7 @@ curl -X POST http://localhost:14000/webhook \
 
 ## Architecture
 
-The application has three main components:
+The application has four main components:
 
 1. **app.py** - Flask web application
    - `/webhook` endpoint receives POST requests from Radarr/Sonarr
@@ -56,6 +56,14 @@ The application has three main components:
    - Keeps subtitle tracks that match allowed languages AND are not forced
    - Writes to `.tmp.mkv` then replaces original atomically
    - Has sanity check: fails if output is <50% of original size
+   - Optionally checks Plex scan status before replacing files (via `plex_checker`)
+
+4. **plex.py** - Plex library scan checker (`PlexScanChecker`)
+   - Optional module, only active when `PLEX_URL` and `PLEX_TOKEN` are configured
+   - Queries Plex API (`/library/sections`) to check if a library is scanning
+   - `wait_if_scanning()` polls until scan finishes or timeout, then returns
+   - Maps container paths to Plex paths via `PLEX_PATH_MAPPING`
+   - Fail-open: any Plex API error logs a warning and allows processing to continue
 
 ## Key Configuration
 
@@ -66,6 +74,11 @@ Environment variables (set in `docker-compose.yml`):
 - `QUEUE_FILE` - Path to queue persistence file
 - `PATH_MAPPINGS` - Translate remote paths to container paths (format: `from1=to1,from2=to2`)
 - `PROCESS_TIME` - Time of day to process files in HH:MM 24-hour format (e.g., `02:00`). If not set, files are processed immediately.
+- `PLEX_URL` - Plex server base URL (e.g., `http://192.168.1.100:32400`). Required to enable Plex scan check.
+- `PLEX_TOKEN` - Plex authentication token. Required to enable Plex scan check.
+- `PLEX_PATH_MAPPING` - Translate container paths to Plex paths (format: `container1=plex1,container2=plex2`). Only needed if Plex sees different paths than the container.
+- `PLEX_SCAN_CHECK_INTERVAL` - Seconds between polls when waiting for scan to finish (default: `30`)
+- `PLEX_SCAN_CHECK_TIMEOUT` - Max seconds to wait for scan before proceeding anyway (default: `3600`)
 
 ## Processing Flow
 
@@ -80,5 +93,6 @@ Environment variables (set in `docker-compose.yml`):
    - If `PROCESS_TIME` is configured, waits until that time of day then processes all queued files
    - If `PROCESS_TIME` is not set, processes immediately
    - Runs `mkvmerge --output temp.mkv --subtitle-tracks <keep_ids> input.mkv`
+   - If Plex scan check is enabled, waits for library scan to finish before replacing
    - Replaces original with `os.replace()`
 5. Queue entry marked completed/failed with result details
