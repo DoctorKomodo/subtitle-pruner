@@ -8,7 +8,9 @@ A webhook-based service that automatically removes unwanted subtitle tracks from
 - **Web UI** to monitor queue status and processing history
 - **Persistent queue** survives container restarts
 - **Configurable language filter** via environment variable
-- **Safe processing** - writes to temp file, then replaces original
+- **Scheduled processing** — optionally batch file processing to a specific time of day
+- **Safe processing** — writes to temp file, then replaces original
+- **PUID/PGID support** — run as any host user for correct file permissions
 
 ## Quick Start
 
@@ -30,12 +32,14 @@ services:
       - ./data:/data
       - /volume1/media:/volume1/media  # Adjust to your paths
     environment:
+      - PUID=1000
+      - PGID=1000
       - ALLOWED_LANGUAGES=eng,dan
       - LOG_LEVEL=INFO
       - PORT=14000
 ```
 
-**Important:** The paths inside the container must match the paths that Radarr/Sonarr will send. If Radarr is configured with `/volume1/media/movies` as its root folder, mount exactly that path.
+**Important:** Set `PUID` and `PGID` to match the host user that owns your media files (find with `id your_user`). The paths inside the container must match the paths that Radarr/Sonarr will send. If Radarr is configured with `/volume1/media/movies` as its root folder, mount exactly that path.
 
 ### 2. Run
 
@@ -81,7 +85,7 @@ Replace `image:` with `build: .` in `docker-compose.yml` when building locally.
 
 ### Sonarr
 
-Same steps as Radarr - add a webhook connection pointing to `http://your-nas-ip:14000/webhook`
+Same steps as Radarr — add a webhook connection pointing to `http://your-nas-ip:14000/webhook`
 
 ## Configuration
 
@@ -89,11 +93,33 @@ Environment variables in `docker-compose.yml`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `PUID` | `1000` | UID to run as — set to match your host user |
+| `PGID` | `1000` | GID to run as — set to match your host user |
 | `ALLOWED_LANGUAGES` | `eng,dan` | Comma-separated language codes to keep |
 | `LOG_LEVEL` | `INFO` | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
 | `PORT` | `14000` | HTTP port |
-| `PATH_MAPPINGS` | (none) | Path translations (see below) |
-| `PROCESS_DELAY` | `0` | Seconds to wait before processing a file |
+| `PATH_MAPPINGS` | *(none)* | Path translations (see below) |
+| `PROCESS_TIME` | *(none)* | Time of day to process files in HH:MM 24-hour format (see below) |
+| `QUEUE_FILE` | `/data/queue.json` | Path to the persistent queue file |
+
+### PUID / PGID
+
+The container uses the LinuxServer.io-style PUID/PGID mechanism. At startup, it creates an internal user matching the specified UID/GID, then drops root privileges. This means the process accesses your media files as your host user — no permission issues with bind mounts.
+
+Find your IDs with:
+
+```bash
+id your_user
+# uid=1035(your_user) gid=100(users) ...
+```
+
+Then set them in `docker-compose.yml`:
+
+```yaml
+environment:
+  - PUID=1035
+  - PGID=100
+```
 
 ### Language Codes
 
@@ -126,14 +152,16 @@ volumes:
 
 The path `\\diskstation\movies\Film (2024)\film.mkv` becomes `/media/movies/Film (2024)/film.mkv`.
 
-### Process Delay
+### Process Time
 
-Set `PROCESS_DELAY` to wait before processing each file. This is useful when other applications (media servers, indexers) need time to finish scanning the file before it gets replaced.
+Set `PROCESS_TIME` to batch all file processing to a specific time of day. Files are still analyzed immediately when webhooks arrive, but the actual remuxing is deferred. This is useful to avoid disk I/O during peak hours.
 
 ```yaml
 environment:
-  - PROCESS_DELAY=60  # Wait 60 seconds
+  - PROCESS_TIME=02:00  # Process queued files at 2 AM
 ```
+
+If not set, files are processed immediately after analysis.
 
 ## API Endpoints
 
@@ -162,7 +190,7 @@ For each MKV file:
 1. **Read track info** using `mkvmerge --identify`
 2. **Identify subtitle tracks** to keep (allowed languages, not forced)
 3. **Skip if nothing to remove** (no unwanted subtitles)
-4. **Process with mkvmerge** - output to `.tmp.mkv` in same folder
+4. **Process with mkvmerge** — output to temp file in same folder
 5. **Replace original** when complete
 
 ### What gets removed
@@ -193,13 +221,13 @@ If Radarr/Sonarr runs on a different machine and sends paths the container can't
 
 ### Permission errors
 
-The container runs as root by default. If you have permission issues, ensure the mounted folders are readable/writable.
+Set `PUID` and `PGID` to match the owner of your media files on the host. See the [PUID / PGID](#puid--pgid) section above.
 
 ### Webhook not receiving
 
 1. Check the container is running: `docker-compose ps`
 2. Check the port is accessible: `curl http://localhost:14000/api/status`
-3. Use Radarr/Sonarr's "Test" button - the service responds with 200 OK to test events
+3. Use Radarr/Sonarr's "Test" button — the service responds with 200 OK to test events
 
 ## File Structure
 
@@ -208,6 +236,7 @@ subtitle-pruner/
 ├── app.py              # Flask application, routes
 ├── worker.py           # Background queue processor
 ├── processor.py        # MKV subtitle processing logic
+├── entrypoint.sh       # PUID/PGID handling and privilege drop
 ├── templates/
 │   └── index.html      # Web UI template
 ├── requirements.txt    # Python dependencies
