@@ -18,7 +18,6 @@ CONFIG = {
     'log_level': os.environ.get('LOG_LEVEL', 'INFO'),
     'path_mappings': [],
     'process_time': os.environ.get('PROCESS_TIME', ''),
-    'allowed_paths': [],
 }
 
 # Parse PATH_MAPPINGS: "from1=to1,from2=to2" format
@@ -29,13 +28,14 @@ if path_mappings_raw:
             from_path, to_path = mapping.split('=', 1)
             CONFIG['path_mappings'].append((from_path, to_path))
 
-# Parse ALLOWED_PATHS: comma-separated list of directories files must reside within
-# Defaults to /media if not set
-allowed_paths_raw = os.environ.get('ALLOWED_PATHS', '/media')
-if allowed_paths_raw:
+# Derive allowed paths from the "to" side of PATH_MAPPINGS (i.e., the container mount points).
+# Falls back to /media if no mappings are configured.
+if CONFIG['path_mappings']:
     CONFIG['allowed_paths'] = [
-        os.path.realpath(p.strip()) for p in allowed_paths_raw.split(':') if p.strip()
+        os.path.realpath(to_path) for _, to_path in CONFIG['path_mappings']
     ]
+else:
+    CONFIG['allowed_paths'] = [os.path.realpath('/media')]
 
 # Set up logging
 logging.basicConfig(

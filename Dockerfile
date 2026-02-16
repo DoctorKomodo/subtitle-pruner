@@ -24,7 +24,6 @@ ENV PORT=14000
 ENV ALLOWED_LANGUAGES=eng,dan
 ENV QUEUE_FILE=/data/queue.json
 ENV LOG_LEVEL=INFO
-ENV ALLOWED_PATHS=/media
 
 # Switch to non-root user
 USER appuser
