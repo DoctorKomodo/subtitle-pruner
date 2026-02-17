@@ -138,14 +138,28 @@ class SubtitleProcessor:
                 'reason': 'No subtitle tracks to remove'
             }
 
-        # Nothing to keep - this might be unexpected
+        # Nothing to keep - check if languages are identifiable
         if not tracks_to_keep:
-            logger.warning(f"No subtitle tracks would remain after processing: {file_path}")
-            return {
-                'needs_processing': False,
-                'action': 'skipped',
-                'reason': 'No allowed subtitle tracks to keep'
-            }
+            # If any tracks have unidentified language, skip to avoid removing
+            # subtitles whose language we cannot determine
+            unidentified_tracks = [
+                t for t in tracks_to_remove
+                if t['language'] in ('und', '')
+            ]
+            if unidentified_tracks:
+                logger.warning(
+                    f"Skipping file with unidentified subtitle languages: {file_path} "
+                    f"(tracks: {[t['id'] for t in unidentified_tracks]})"
+                )
+                return {
+                    'needs_processing': False,
+                    'action': 'skipped',
+                    'reason': 'Subtitle tracks with unidentified language present'
+                }
+            # All tracks have identified languages that don't match — remove all
+            logger.warning(
+                f"All subtitle tracks will be removed (no allowed languages found): {file_path}"
+            )
 
         return {
             'needs_processing': True,
@@ -173,25 +187,29 @@ class SubtitleProcessor:
         tracks_to_keep = analysis['tracks_to_keep']
         tracks_to_remove = analysis['tracks_to_remove']
 
-        # Build mkvmerge command
-        keep_ids = ','.join(str(t['id']) for t in tracks_to_keep)
-        
         # Create temp file path (same directory, .mkv.tmp extension to avoid detection as video)
         dir_path = os.path.dirname(file_path)
         base_name = os.path.basename(file_path)
         temp_path = os.path.join(dir_path, f"{base_name}.tmp")
-        
-        logger.info(f"Keeping subtitle tracks: {keep_ids}")
+
+        # Build mkvmerge command
+        if tracks_to_keep:
+            keep_ids = ','.join(str(t['id']) for t in tracks_to_keep)
+            subtitle_args = ['--subtitle-tracks', keep_ids]
+            logger.info(f"Keeping subtitle tracks: {keep_ids}")
+        else:
+            subtitle_args = ['--no-subtitles']
+            logger.info("Removing all subtitle tracks")
         logger.info(f"Removing {len(tracks_to_remove)} tracks: {[t['id'] for t in tracks_to_remove]}")
         logger.debug(f"Temp file: {temp_path}")
-        
+
         try:
             # Run mkvmerge
             result = subprocess.run(
                 [
                     'mkvmerge',
                     '--output', temp_path,
-                    '--subtitle-tracks', keep_ids,
+                ] + subtitle_args + [
                     file_path
                 ],
                 capture_output=True,
