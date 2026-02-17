@@ -10,11 +10,10 @@ Subtitle Pruner is a webhook-based service that automatically removes unwanted s
 
 RESPECT THE WORKFLOW BELOW!!!
 NEVER: leave uncommitted or unpushed changes - always maintain a consistent and backed-up repository state
-Keep the App modular!!!
 ALWAYS: Consider if a web research for current best practices could be useful.
 ALWAYS: Consider if a web research for existing framework components that cover the requirements
 
-# WORKFLOW
+## WORKFLOW
 
 # Git Branching
 
