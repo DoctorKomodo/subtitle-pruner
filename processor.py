@@ -15,12 +15,13 @@ logger = logging.getLogger(__name__)
 class SubtitleProcessor:
     """Processes MKV files to remove unwanted subtitle tracks."""
     
-    def __init__(self, allowed_languages: List[str]):
+    def __init__(self, allowed_languages: List[str], skip_verify: bool = False):
         self.allowed_languages = [lang.strip().lower() for lang in allowed_languages]
         logger.info(f"Subtitle processor initialized with allowed languages: {self.allowed_languages}")
-        
+
         # Verify mkvmerge is available
-        self._verify_mkvmerge()
+        if not skip_verify:
+            self._verify_mkvmerge()
     
     def _verify_mkvmerge(self):
         """Verify mkvmerge is installed and accessible."""

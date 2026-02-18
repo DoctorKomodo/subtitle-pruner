@@ -51,9 +51,13 @@ def apply_path_mapping(file_path: str) -> str:
 # Initialize Flask app
 app = Flask(__name__)
 
-# Initialize processor and worker
-processor = SubtitleProcessor(CONFIG['allowed_languages'])
-worker = ProcessingWorker(processor, CONFIG['queue_file'], CONFIG['process_time'])
+# Initialize processor and worker (skipped during testing)
+if not os.environ.get('TESTING'):
+    processor = SubtitleProcessor(CONFIG['allowed_languages'])
+    worker = ProcessingWorker(processor, CONFIG['queue_file'], CONFIG['process_time'])
+else:
+    processor = None
+    worker = None
 
 
 @app.route('/')
@@ -191,7 +195,8 @@ def _start_worker():
 
 
 # Start worker threads when the module is loaded (works with both gunicorn and direct run)
-_start_worker()
+if not os.environ.get('TESTING'):
+    _start_worker()
 
 
 if __name__ == '__main__':
